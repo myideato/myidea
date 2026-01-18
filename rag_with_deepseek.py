@@ -9,7 +9,7 @@ import os
 
 # DeepSeek API 配置
 # 请设置环境变量 DEEPSEEK_API_KEY，或在此处直接填写你的 API Key
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "test-key")
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
 
 # 文档路径
