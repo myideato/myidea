@@ -1,0 +1,8 @@
+# 仅 LlamaIndex RAG（rag_llamaindex.py）
+llama-index>=0.9.0,<0.15.0
+llama-index-embeddings-huggingface
+llama-index-vector-stores-faiss
+llama-index-llms-openai-like
+openai>=1.0.0
+sentence-transformers>=2.2.0
+faiss-cpu>=1.7.4

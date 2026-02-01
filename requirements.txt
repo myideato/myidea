@@ -1,13 +1,14 @@
-llama-index>=0.9.0
-llama-index-embeddings-huggingface
-llama-index-vector-stores-faiss
-llama-index-llms-openai-like
-openai>=1.0.0
-sentence-transformers>=2.2.0
-langchain>=0.1.0
-langchain-community>=0.0.20
-langchain-openai>=0.0.5
-langchain-text-splitters>=0.0.1
-langchain-core>=0.1.0
-langchain-huggingface>=0.0.1
-faiss-cpu>=1.7.4
+# 两套 RAG 同时安装时 pip 容易报 resolution-too-deep，请按需安装：
+#
+# 只用 LlamaIndex（rag_llamaindex.py）：
+#   pip install -r requirements-llamaindex.txt
+#
+# 只用 LangChain（rag_langchain.py）：
+#   pip install -r requirements-langchain.txt
+#
+# 若需同时使用两套，请分两步安装：
+#   pip install -r requirements-llamaindex.txt
+#   pip install -r requirements-langchain.txt
+#
+# 或用 uv 一次性安装（解析器更强）：
+#   uv pip install -r requirements-llamaindex.txt -r requirements-langchain.txt
