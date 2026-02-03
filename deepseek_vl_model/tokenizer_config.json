@@ -1,0 +1,16 @@
+{
+  "backend": "tokenizers",
+  "bos_token": "<｜begin▁of▁sentence｜>",
+  "clean_up_tokenization_spaces": false,
+  "eos_token": "<｜end▁of▁sentence｜>",
+  "extra_special_tokens": [
+    "<image_placeholder>"
+  ],
+  "is_local": false,
+  "model_max_length": 16384,
+  "pad_token": null,
+  "processor_class": "VLChatProcessor",
+  "tokenizer_class": "TokenizersBackend",
+  "unk_token": null,
+  "use_default_system_prompt": false
+}
