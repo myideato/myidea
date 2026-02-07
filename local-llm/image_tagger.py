@@ -1,49 +1,58 @@
 import torch
 from PIL import Image, ImageDraw, ImageFont
 import os
+import argparse
 from typing import List, Dict, Tuple
 import json
 import time
 from datetime import datetime
 
 class DeepSeekImageTagger:
-    def __init__(self, model_path=None):
-        """初始化DeepSeek-VL打标系统"""
+    def __init__(self, model_path=None, device=None, max_new_tokens=256):
+        """初始化DeepSeek-VL打标系统。device 可选 'cuda'/'cpu'，不传则自动检测。"""
         print("🚀 初始化DeepSeek图像打标系统...")
+        self._max_new_tokens = max_new_tokens
         
-        self.device = "cpu"
-        print(f"使用设备: {self.device}")
+        if device is None:
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        else:
+            self.device = device
+        # GPU 用半精度加速，CPU 用 float32
+        self.dtype = torch.float16 if self.device == "cuda" else torch.float32
+        if self.device == "cuda" and hasattr(torch, "bfloat16"):
+            try:
+                self.dtype = torch.bfloat16  # 更稳，显存友好
+            except Exception:
+                pass
+        print(f"使用设备: {self.device} (dtype={self.dtype})")
         
         try:
-            # 尝试加载DeepSeek-VL
-            from transformers import AutoModelForCausalLM, AutoTokenizer, AutoImageProcessor
-            
-            if model_path and os.path.exists(model_path):
-                model_name = model_path
+            # 尝试加载 DeepSeek-VL（含 Hybrid），与 download_model 一致：AutoModelForImageTextToText + AutoProcessor
+            from transformers import AutoModelForImageTextToText, AutoProcessor
+
+            default_hf = "deepseek-community/deepseek-vl-7b-base"
+            if model_path:
+                model_path_abs = os.path.abspath(os.path.normpath(model_path))
+                if os.path.isdir(model_path_abs):
+                    model_name = model_path_abs
+                else:
+                    model_name = default_hf
             else:
-                model_name = "deepseek-ai/deepseek-vl-7b"
-            
+                model_name = default_hf
+
             print(f"加载模型: {model_name}")
-            
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                model_name, 
-                trust_remote_code=True
-            )
-            self.image_processor = AutoImageProcessor.from_pretrained(
-                model_name, 
-                trust_remote_code=True
-            )
-            
-            # 加载模型（CPU模式）
-            self.model = AutoModelForCausalLM.from_pretrained(
+
+            self.processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
+            device_map = "cuda" if self.device == "cuda" else "cpu"
+            self.model = AutoModelForImageTextToText.from_pretrained(
                 model_name,
                 trust_remote_code=True,
-                torch_dtype=torch.float32,
+                torch_dtype=self.dtype,
                 low_cpu_mem_usage=True,
-                device_map="cpu"
+                device_map=device_map,
             )
             self.model.eval()
-            
+
             self.model_type = "deepseek-vl"
             
         except Exception as e:
@@ -74,36 +83,60 @@ class DeepSeekImageTagger:
         start_time = time.time()
         
         if self.model_type == "deepseek-vl":
-            # DeepSeek-VL处理流程
+            # DeepSeek-VL / DeepseekVLHybrid：使用 chat 模板 + apply_chat_template
             if prompt is None:
                 prompt = "详细描述这张图片的内容，列出主要物体、场景、颜色、动作等要素。"
-            
-            # 准备输入
-            inputs = self.image_processor(images=image, return_tensors="pt")
-            
-            # 编码文本
-            text_encoding = self.tokenizer(
-                prompt, 
-                return_tensors="pt",
-                padding=True,
-                truncation=True
-            )
-            
-            # 合并输入
-            inputs.update(text_encoding)
-            
-            # 推理
-            with torch.no_grad():
-                outputs = self.model.generate(
-                    **inputs,
-                    max_new_tokens=500,
-                    do_sample=True,
-                    temperature=0.7,
-                    top_p=0.9
+            # content 支持 "image"(PIL) 或 "url"(本地用 file://)
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "image": image},
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ]
+            try:
+                inputs = self.processor.apply_chat_template(
+                    messages,
+                    add_generation_prompt=True,
+                    padding=True,
+                    truncation=True,
+                    tokenize=True,
+                    return_dict=True,
+                    return_tensors="pt",
                 )
-            
-            # 解码结果
-            result = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+            except (TypeError, KeyError):
+                # 部分 processor 只认 url，用 file:// 本地路径
+                path_url = "file:///" + os.path.abspath(image_path).replace("\\", "/")
+                messages[0]["content"][0] = {"type": "image", "url": path_url}
+                inputs = self.processor.apply_chat_template(
+                    messages,
+                    add_generation_prompt=True,
+                    padding=True,
+                    truncation=True,
+                    tokenize=True,
+                    return_dict=True,
+                    return_tensors="pt",
+                )
+            # 移到模型所在 device（BatchFeature 支持 .to()）
+            device = getattr(self.model, "device", torch.device("cpu"))
+            dtype = getattr(self.model, "dtype", torch.float32)
+            if hasattr(dtype, "dtype"):
+                dtype = dtype.dtype
+            if hasattr(inputs, "to"):
+                inputs = inputs.to(device, dtype=dtype)
+            else:
+                inputs = {k: (v.to(device, dtype=dtype) if hasattr(v, "to") else v) for k, v in inputs.items()}
+            with torch.no_grad():
+                generated_ids = self.model.generate(**inputs, max_new_tokens=getattr(self, "_max_new_tokens", 256), do_sample=True, temperature=0.7, top_p=0.9)
+            generated_ids_trimmed = [
+                out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs["input_ids"], generated_ids)
+            ]
+            decoded = self.processor.batch_decode(
+                generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+            )
+            result = decoded[0] if decoded else ""
             
         else:  # BLIP-2
             if prompt is None:
@@ -232,29 +265,35 @@ class DeepSeekImageTagger:
 
 # 使用示例
 if __name__ == "__main__":
-    # 初始化打标器
-    tagger = DeepSeekImageTagger()
-    
-    # 测试单张图片
-    test_image = "test.jpg"  # 替换为你的图片路径
-    
-    if os.path.exists(test_image):
-        print("\n🔍 分析单张图片...")
-        result = tagger.analyze_image(test_image)
-        
-        print(f"\n📝 描述: {result['description']}")
-        print(f"\n🏷️ 标签: {', '.join(result['tags'])}")
-        print(f"⏱️ 推理时间: {result['inference_time']:.2f}秒")
-        
-        # 创建可视化
-        tagger.create_tag_visualization(test_image, result['tags'])
-        
-        # 保存结果
-        with open("single_result.json", "w", encoding="utf-8") as f:
-            json.dump([result], f, ensure_ascii=False, indent=2)
+    parser = argparse.ArgumentParser(description="DeepSeek/BLIP 图像打标")
+    parser.add_argument("--model_path", type=str, default=None,
+                        help="本地 DeepSeek-VL 模型目录，如 .\\deepseek_vl_model\\")
+    parser.add_argument("--device", type=str, default=None, choices=["cuda", "cpu"],
+                        help="设备：cuda 或 cpu，不传则自动检测（有显卡会用 GPU，快很多）")
+    parser.add_argument("--max_tokens", type=int, default=256,
+                        help="生成描述最大 token 数，越小越快，默认 256")
+    parser.add_argument("--image", type=str, default="test.png", help="单张测试图片路径")
+    parser.add_argument("--batch_dir", type=str, default=None, help="批量处理图片目录")
+    parser.add_argument("--output", type=str, default="tags.json", help="批量结果输出文件")
+    args = parser.parse_args()
+
+    # 初始化打标器（传入命令行 model_path、device、max_tokens）
+    tagger = DeepSeekImageTagger(model_path=args.model_path, device=args.device, max_new_tokens=args.max_tokens)
+
+    # 批量处理 或 单张测试
+    if args.batch_dir and os.path.isdir(args.batch_dir):
+        tagger.batch_process(args.batch_dir, output_file=args.output)
     else:
-        print(f"测试图片不存在: {test_image}")
-        print("请准备一张测试图片，或运行批量处理")
-    
-    # 批量处理示例（取消注释以使用）
-    # tagger.batch_process("./images", "batch_tags.json")
+        test_image = args.image
+        if os.path.exists(test_image):
+            print("\n🔍 分析单张图片...")
+            result = tagger.analyze_image(test_image)
+            print(f"\n📝 描述: {result['description']}")
+            print(f"\n🏷️ 标签: {', '.join(result['tags'])}")
+            print(f"⏱️ 推理时间: {result['inference_time']:.2f}秒")
+            tagger.create_tag_visualization(test_image, result['tags'])
+            with open("single_result.json", "w", encoding="utf-8") as f:
+                json.dump([result], f, ensure_ascii=False, indent=2)
+        else:
+            print(f"测试图片不存在: {test_image}")
+            print("请准备一张测试图片，或使用 --batch_dir 指定目录批量处理")

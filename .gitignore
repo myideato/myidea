@@ -3,3 +3,12 @@ deepseek_vl_env/
 
 # 忽略所有 .env 文件
 .env
+
+blip2_model/model.safetensors
+
+deepseek_vl_model/model-00001-of-00003.safetensors
+
+deepseek_vl_model/model-00002-of-00003.safetensors
+
+deepseek_vl_model/model-00003-of-00003.safetensors
+
