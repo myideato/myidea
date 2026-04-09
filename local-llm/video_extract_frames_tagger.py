@@ -1,18 +1,31 @@
+import argparse
 import cv2
 import os
 import json
 from PIL import Image
-import numpy as np
 from datetime import datetime
 from image_tagger import DeepSeekImageTagger  # 重用图片打标器
 
 class VideoFrameTagger:
-    def __init__(self, model_path=None):
+    def __init__(
+        self,
+        model_path=None,
+        model_type="deepseek-vl",
+        device=None,
+        max_new_tokens=256,
+        frame_interval=10,
+        max_frames=100,
+    ):
         """初始化视频打标系统"""
         print("🎥 初始化视频帧打标系统...")
-        self.image_tagger = DeepSeekImageTagger(model_path)
-        self.frame_interval = 10  # 每10帧采样一帧
-        self.max_frames = 100  # 最大处理帧数
+        self.image_tagger = DeepSeekImageTagger(
+            model_path=model_path,
+            model_type=model_type,
+            device=device,
+            max_new_tokens=max_new_tokens,
+        )
+        self.frame_interval = frame_interval  # 每隔多少帧采样一帧
+        self.max_frames = max_frames  # 最大处理帧数
     
     def extract_keyframes(self, video_path: str, output_dir: str = "frames"):
         """从视频中提取关键帧"""
@@ -68,12 +81,16 @@ class VideoFrameTagger:
         
         return frame_paths
     
-    def analyze_video(self, video_path: str, output_file: str = "video_tags.json"):
+    def analyze_video(
+        self,
+        video_path: str,
+        output_file: str = "video_tags.json",
+        frames_dir: str = "extracted_frames",
+    ):
         """分析视频并生成标签"""
         print(f"\n🎬 开始分析视频: {video_path}")
         
         # 1. 提取关键帧
-        frames_dir = "extracted_frames"
         frames = self.extract_keyframes(video_path, frames_dir)
         
         if not frames:
@@ -167,105 +184,104 @@ class VideoFrameTagger:
         else:
             return "未能生成视频摘要"
     
-    def create_video_report(self, video_path: str, output_html: str = "video_report.html"):
-        """生成HTML报告"""
-        print(f"生成视频分析报告: {output_html}")
-        
-        # 读取分析结果
-        json_file = "video_tags.json"
-        if not os.path.exists(json_file):
-            print(f"请先运行视频分析: {video_path}")
-            return
-        
-        with open(json_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        # 生成HTML
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <title>视频分析报告 - {os.path.basename(video_path)}</title>
-            <style>
-                body {{ font-family: Arial, sans-serif; margin: 20px; }}
-                .header {{ background: #f0f0f0; padding: 20px; border-radius: 5px; }}
-                .tags {{ margin: 20px 0; }}
-                .tag {{ display: inline-block; background: #4CAF50; color: white; 
-                        padding: 5px 10px; margin: 5px; border-radius: 3px; }}
-                .frame {{ margin: 20px 0; border: 1px solid #ddd; padding: 10px; }}
-                .frame-img {{ max-width: 300px; }}
-                .timestamp {{ color: #666; }}
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <h1>🎬 视频分析报告</h1>
-                <p><strong>视频文件:</strong> {data['video_path']}</p>
-                <p><strong>分析时间:</strong> {data['analysis_time']}</p>
-                <p><strong>分析帧数:</strong> {data['total_frames_analyzed']}</p>
-            </div>
-            
-            <div class="summary">
-                <h2>📋 视频摘要</h2>
-                <pre>{data['summary']}</pre>
-            </div>
-            
-            <div class="tags">
-                <h2>🏷️ 视频标签</h2>
-                {"".join([f'<span class="tag">{tag}</span>' for tag in data['video_tags'][:20]])}
-            </div>
-            
-            <div class="frames">
-                <h2>🎞️ 关键帧分析</h2>
-        """
-        
-        for i, frame in enumerate(data['frame_analysis'][:20]):  # 最多显示20帧
-            if 'frame_path' in frame and os.path.exists(frame['frame_path']):
-                html_content += f"""
-                <div class="frame">
-                    <h3>帧 #{i+1} - {frame.get('frame_time', 'N/A')}</h3>
-                    <img class="frame-img" src="{frame['frame_path']}" alt="Frame {i+1}">
-                    <p class="timestamp">时间戳: {frame.get('timestamp', 'N/A')}秒</p>
-                    <p><strong>描述:</strong> {frame.get('description', 'N/A')[:200]}...</p>
-                    <p><strong>标签:</strong> {', '.join(frame.get('tags', []))[:10]}</p>
-                </div>
-                """
-        
-        html_content += """
-            </div>
-        </body>
-        </html>
-        """
-        
-        with open(output_html, 'w', encoding='utf-8') as f:
-            f.write(html_content)
-        
-        print(f"✅ HTML报告已生成: {output_html}")
-        return output_html
-
-# 使用示例
+    
 if __name__ == "__main__":
-    # 初始化视频打标器
-    video_tagger = VideoFrameTagger()
-    
-    # 测试视频文件
-    test_video = "test.mp4"  # 替换为你的视频路径
-    
-    if os.path.exists(test_video):
-        print("开始视频分析...")
-        
-        # 分析视频
-        result = video_tagger.analyze_video(test_video, "video_analysis.json")
-        
-        # 生成报告
-        video_tagger.create_video_report(test_video, "video_report.html")
-        
-        print("\n📊 分析完成！")
-        print("1. 查看详细结果: video_analysis.json")
-        print("2. 查看HTML报告: video_report.html")
-        print("3. 查看提取的帧: extracted_frames/")
-        
-    else:
-        print(f"测试视频不存在: {test_video}")
-        print("请准备一个测试视频（MP4格式）")
+    parser = argparse.ArgumentParser(
+        description="视频抽帧 + DeepSeek-VL/BLIP-2 逐帧图像打标（与 image_tagger 参数风格一致）"
+    )
+    parser.add_argument(
+        "--model_path",
+        type=str,
+        default=None,
+        help="本地模型目录，如 .\\deepseek_vl_model\\ 或 .\\blip2_model\\",
+    )
+    parser.add_argument(
+        "--model_type",
+        type=str,
+        default="deepseek-vl",
+        choices=["deepseek-vl", "blip2"],
+        help="模型类型：deepseek-vl 或 blip2，默认 deepseek-vl",
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        choices=["cuda", "cpu"],
+        help="设备：cuda 或 cpu; 不传则自动检测",
+    )
+    parser.add_argument(
+        "--max_tokens",
+        type=int,
+        default=512,
+        help="每帧描述最大 token 数，默认 512（与 image_tagger 一致）",
+    )
+    parser.add_argument(
+        "--video",
+        type=str,
+        required=True,
+        help="输入视频路径（MP4 等 OpenCV 可读格式）",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="汇总结果 JSON；未指定时为「视频同级目录 / 视频名_模型名.json」（模型名规则同 image_tagger）",
+    )
+    parser.add_argument(
+        "--frames_dir",
+        type=str,
+        default=None,
+        help="抽帧保存目录；未指定时为「视频同级目录 / 视频名_模型名_extracted_frames」",
+    )
+    parser.add_argument(
+        "--frame_interval",
+        type=int,
+        default=10,
+        help="每隔多少帧保存一帧，默认 10",
+    )
+    parser.add_argument(
+        "--max_frames",
+        type=int,
+        default=100,
+        help="最多分析多少帧，默认 100",
+    )
+    args = parser.parse_args()
+
+    if not os.path.isfile(args.video):
+        print(f"视频不存在或不是文件: {args.video}")
+        raise SystemExit(1)
+
+    video_tagger = VideoFrameTagger(
+        model_path=args.model_path,
+        model_type=args.model_type,
+        device=args.device,
+        max_new_tokens=args.max_tokens,
+        frame_interval=args.frame_interval,
+        max_frames=args.max_frames,
+    )
+
+    video_abs = os.path.abspath(os.path.normpath(args.video))
+    video_dir = os.path.dirname(video_abs)
+    video_stem = os.path.splitext(os.path.basename(video_abs))[0]
+    model_suffix = getattr(
+        video_tagger.image_tagger, "model_name_suffix", "default"
+    )
+
+    output_file = args.output
+    if output_file is None:
+        output_file = os.path.join(video_dir, f"{video_stem}_{model_suffix}.json")
+
+    frames_dir = args.frames_dir
+    if frames_dir is None:
+        frames_dir = os.path.join(
+            video_dir, f"{video_stem}_{model_suffix}_extracted_frames"
+        )
+
+    print(f"汇总 JSON: {output_file}")
+    print(f"抽帧目录: {frames_dir}")
+
+    video_tagger.analyze_video(
+        args.video,
+        output_file=output_file,
+        frames_dir=frames_dir,
+    )

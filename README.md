@@ -1,7 +1,7 @@
 # myidea
 # 智能体框架研发与落地指南
 
-本文档全面介绍五大主流智能体框架：Eino、LangChain、LangGraph、Dify、LlamaIndex的研发背景、核心特性、落地应用场景及示例代码。
+本文档全面介绍五大主流智能体框架：预训练多模态模型结构化打标、Eino、LangChain、LangGraph、Dify、LlamaIndex的研发背景、核心特性、落地应用场景及示例代码。
 
 ---
 

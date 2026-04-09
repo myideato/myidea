@@ -6,9 +6,19 @@ deepseek_vl_env/
 
 blip2_model/model.safetensors
 
-deepseek_vl_model/model-00001-of-00003.safetensors
 
-deepseek_vl_model/model-00002-of-00003.safetensors
+deepseek_vl_chat_model/
 
-deepseek_vl_model/model-00003-of-00003.safetensors
+qwen2_5_vl_7b_instruct/
+pointllm_7b_v1_2/
+PointLLM/
+GPT4Point/
+gpt4point_weight/
 
+
+.pointllm_venv/
+.gpt4point_venv/
+
+ply-tag-file/
+video-tag-file/
+image-tag-file/
